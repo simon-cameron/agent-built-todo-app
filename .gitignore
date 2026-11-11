@@ -1,0 +1,23 @@
+# Frontier workflow artifacts (local only)
+.frontier/initiatives/
+
+# Secrets: never commit real environment files
+.env
+.env.*
+!.env.example
+
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Playwright output
+playwright-report/
+test-results/
+blob-report/
+playwright/.cache/
+
+# Local database data and OS files
+pgdata/
+.DS_Store
