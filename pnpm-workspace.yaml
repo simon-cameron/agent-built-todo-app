@@ -1,0 +1,20 @@
+packages:
+  - apps/*
+  - packages/*
+
+# Single place for dependency pins. Exact versions only (no ^ or ~).
+catalog:
+  typescript: 6.0.3
+  eslint: 9.39.5
+  '@eslint/js': 9.39.5
+  typescript-eslint: 8.72.2
+  eslint-plugin-react: 7.37.5
+  globals: 17.14.0
+  vitest: 5.1.0
+  '@types/node': 24.19.2
+  zod: 4.6.7
+
+# Dependency install scripts stay blocked (pnpm default). The allow-list below
+# is intentionally empty. Add an entry only with a written reason per entry and
+# update tooling/test/workspace.test.ts in the same commit.
+allowBuilds: {}
