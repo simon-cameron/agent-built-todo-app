@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { createServer, type Server } from 'node:net';
 import type pg from 'pg';
@@ -95,6 +96,32 @@ function occupy(port: number): Promise<Server> {
   });
 }
 
+describe('start when cleanup after a failed start fails', () => {
+  it('logs one error line with a code and a fixed message, never the driver text, and still rejects with the original error', async () => {
+    const secret = randomBytes(12).toString('hex');
+    const capture = captureLogger();
+    const stubPool = {
+      end: async () => {
+        throw Object.assign(new Error(`end failed ${secret}`), { code: 'XX000', detail: secret });
+      },
+    } as unknown as pg.Pool;
+    const failure = start({
+      config: Object.assign({}, buildTestConfig(), { apiPort: await freePort() }),
+      logger: capture.logger,
+      pool: stubPool,
+      probe: async () => undefined,
+      migrate: async () => {
+        throw new StartupError('safe message');
+      },
+    });
+    await expect(failure).rejects.toThrow('safe message');
+    const lines = capture.records().filter((record) => record.msg === 'cleanup after failed start failed');
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({ level: 'error', err: { code: 'XX000', message: 'Cleanup after the failed start did not complete.' } });
+    expect(capture.lines.join('\n')).not.toContain(secret);
+  });
+});
+
 describe('start when the port is taken', () => {
   it('rejects with a StartupError naming the port and API_PORT, ends the pool and listens nowhere', async () => {
     const port = await freePort();
@@ -140,15 +167,17 @@ describe('handleSignals', () => {
     expect((instance.pool as pg.Pool).ended).toBe(true);
   });
 
-  it('exits 1 when stopping fails', async () => {
+  it('exits 1 when stopping fails, logging a code and a fixed message and never the driver text', async () => {
+    const secret = randomBytes(12).toString('hex');
+    const capture = captureLogger();
     const signals = new EventEmitter();
     const exitCodes: number[] = [];
     const exited = new Promise<void>((resolveExit) => {
       handleSignals(
-        { stop: () => Promise.reject(new Error('nope')) },
+        { stop: () => Promise.reject(Object.assign(new Error(`nope ${secret}`), { code: 'XX000' })) },
         {
           signals,
-          logger: captureLogger().logger,
+          logger: capture.logger,
           exit: (code) => {
             exitCodes.push(code);
             resolveExit();
@@ -159,5 +188,7 @@ describe('handleSignals', () => {
     signals.emit('SIGTERM');
     await exited;
     expect(exitCodes).toEqual([1]);
+    expect(capture.records().find((record) => record.msg === 'shutdown failed')).toMatchObject({ level: 'error', err: { code: 'XX000', message: 'Shutdown did not complete cleanly.' } });
+    expect(capture.lines.join('\n')).not.toContain(secret);
   });
 });
