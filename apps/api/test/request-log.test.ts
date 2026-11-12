@@ -1,44 +1,29 @@
 import { randomBytes } from 'node:crypto';
 import { setTimeout as delay } from 'node:timers/promises';
 import type pg from 'pg';
-import { afterEach, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { buildApp } from '../src/app';
 import { buildRequestLine, loggedPath, MAX_LOGGED_PATH_CODE_POINTS } from '../src/request-log';
-import { start, type RunningApp } from '../src/start';
 import { buildTestConfig } from './db-setup';
-import { freePort } from './free-port';
 import { captureLogger, type LogRecord } from './log-capture';
-import { rawRequest, type RawRequestOptions } from './request';
+import { injectLocal, rawRequest, type RawRequestOptions } from './request';
+import { startTestServer, stopServersAfterEach } from './serve';
 
 const marker = (): string => randomBytes(12).toString('hex');
 const requestLines = (records: LogRecord[]): LogRecord[] => records.filter((record) => record.msg === 'request completed');
 
-const running: RunningApp[] = [];
-afterEach(async () => {
-  await Promise.all(running.splice(0).map((instance) => instance.stop()));
-});
+stopServersAfterEach();
 
 /** The real app on a real socket, with routes that fail in the ways the tests need. */
-async function serve() {
-  const port = await freePort();
-  const capture = captureLogger();
-  const config = Object.assign({}, buildTestConfig(), { apiPort: port });
-  const instance = await start({
-    config,
-    logger: capture.logger,
-    buildApp: (dependencies) => {
-      const app = buildApp(dependencies);
-      app.get('/boom', async () => {
-        throw Object.assign(new Error('boom'), { code: 'XX000' });
-      });
-      app.get('/client-error', async () => {
-        throw Object.assign(new Error('client mistake'), { statusCode: 400, code: 'FST_ERR_VALIDATION' });
-      });
-      return app;
-    },
+function serve() {
+  return startTestServer((app) => {
+    app.get('/boom', async () => {
+      throw Object.assign(new Error('boom'), { code: 'XX000' });
+    });
+    app.get('/client-error', async () => {
+      throw Object.assign(new Error('client mistake'), { statusCode: 400, code: 'FST_ERR_VALIDATION' });
+    });
   });
-  running.push(instance);
-  return { port, capture };
 }
 
 /** Sends one request, waits for its line, then waits a moment more so a second line would be seen. */
@@ -180,7 +165,7 @@ describe('the request line under app.inject', () => {
   it('is written once for a request that fails inside the route', async () => {
     const capture = captureLogger();
     const app = buildApp({ config: buildTestConfig(), pool: { query: async () => ({ rows: [] }) } as unknown as pg.Pool, logger: capture.logger });
-    await app.inject({ method: 'GET', url: '/nothing' });
+    await injectLocal(app, { method: 'GET', url: '/nothing' });
     await app.close();
     expect(requestLines(capture.records())).toHaveLength(1);
   });

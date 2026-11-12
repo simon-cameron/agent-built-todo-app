@@ -14,6 +14,7 @@
     "@todo/shared": "workspace:*",
     "drizzle-orm": "catalog:",
     "fastify": "catalog:",
+    "fastify-plugin": "catalog:",
     "pg": "catalog:",
     "pino": "catalog:",
     "zod": "catalog:"

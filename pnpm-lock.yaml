@@ -30,6 +30,9 @@ catalogs:
     fastify:
       specifier: 5.12.8
       version: 5.12.8
+    fastify-plugin:
+      specifier: 6.0.1
+      version: 6.0.1
     globals:
       specifier: 17.14.0
       version: 17.14.0
@@ -101,6 +104,9 @@ importers:
       fastify:
         specifier: 'catalog:'
         version: 5.12.8
+      fastify-plugin:
+        specifier: 'catalog:'
+        version: 6.0.1
       pg:
         specifier: 'catalog:'
         version: 8.23.1
@@ -1303,6 +1309,9 @@ packages:
 
   fast-uri@4.2.3:
     resolution: {integrity: sha512-I1PXwP5eAhlNlcdpjt9CgB59op2ZvZfxw+BkqGFVIUOgNpCVTcTqp3HhTX7brxj5vsip+nSY4nTvff+eIA76hg==}
+
+  fastify-plugin@6.0.1:
+    resolution: {integrity: sha512-4wW4RxSmvPXLrh5mgQEiu43qU3bw44N2ss4FTkTkQIbprUhE+/s43QX0j/ttcztdWK7PEkHqVthdc5GdEGDvjA==}
 
   fastify@5.12.8:
     resolution: {integrity: sha512-moP8exb2sCHLUbJkwp+I6C0padhy4D8lp0SdmzY7HhSdZuqm7O/u3o2aq7u8okaQ//33QDzj3G/u+FsSdB8Qzw==}
@@ -3289,6 +3298,8 @@ snapshots:
   fast-uri@3.1.9: {}
 
   fast-uri@4.2.3: {}
+
+  fastify-plugin@6.0.1: {}
 
   fastify@5.12.8:
     dependencies:

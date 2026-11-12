@@ -6,6 +6,7 @@ import { buildApp } from '../src/app';
 import { AppError, ERROR_RULES, MESSAGE_BY_CODE, STATUS_BY_CODE, mapError, sendError } from '../src/errors';
 import { buildTestConfig } from './db-setup';
 import { captureLogger } from './log-capture';
+import { injectLocal } from './request';
 
 const config = buildTestConfig();
 const quietPool = { query: async () => ({ rows: [] }) } as unknown as pg.Pool;
@@ -54,7 +55,7 @@ describe('the not-found handler and the bad-URL path', () => {
       { method: 'DELETE', url: '/health' },
       { method: 'GET', url: '/health/%' },
     ] as const) {
-      const response = await app.inject(request);
+      const response = await injectLocal(app, request);
       expect(response.statusCode, `${request.method} ${request.url}`).toBe(404);
       expect(response.json(), `${request.method} ${request.url}`).toEqual(expected);
     }
@@ -66,7 +67,7 @@ describe('errors on a request that matched no route', () => {
   it('answers bad JSON with 404 route_not_found and shows the marker nowhere', async () => {
     const secret = marker();
     const { app, capture } = appWith();
-    const response = await app.inject({ method: 'POST', url: '/nothing-here', headers: { 'content-type': 'application/json' }, payload: `{"title": "${secret}` });
+    const response = await injectLocal(app, { method: 'POST', url: '/nothing-here', headers: { 'content-type': 'application/json' }, payload: `{"title": "${secret}` });
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ error: { code: 'route_not_found', message: 'No such route.' } });
     expect(response.body + capture.lines.join('\n')).not.toContain(secret);
@@ -76,7 +77,7 @@ describe('errors on a request that matched no route', () => {
   it('answers an oversized body with 404 route_not_found and shows the marker nowhere', async () => {
     const secret = marker();
     const { app, capture } = appWith();
-    const response = await app.inject({ method: 'POST', url: '/nothing-here', headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ title: secret.repeat(100_000) }) });
+    const response = await injectLocal(app, { method: 'POST', url: '/nothing-here', headers: { 'content-type': 'application/json' }, payload: JSON.stringify({ title: secret.repeat(100_000) }) });
     expect(response.statusCode).toBe(404);
     expect(response.json()).toEqual({ error: { code: 'route_not_found', message: 'No such route.' } });
     expect(response.body + capture.lines.join('\n')).not.toContain(secret);
@@ -91,7 +92,7 @@ describe('errors on a matched route', () => {
     app.get('/bad', async () => {
       throw clientError(`Unexpected token ${secret}`);
     });
-    const response = await app.inject({ method: 'GET', url: '/bad' });
+    const response = await injectLocal(app, { method: 'GET', url: '/bad' });
     expect(response.statusCode).toBe(500);
     expect(response.json()).toEqual({ error: { code: 'internal_error', message: 'Internal server error.' } });
     expect(response.body + capture.lines.join('\n')).not.toContain(secret);
@@ -104,7 +105,7 @@ describe('errors on a matched route', () => {
     app.get('/boom', async () => {
       throw new Error(`boom ${secret}`);
     });
-    const response = await app.inject({ method: 'GET', url: '/boom' });
+    const response = await injectLocal(app, { method: 'GET', url: '/boom' });
     expect(response.statusCode).toBe(500);
     expect(response.json()).toEqual({ error: { code: 'internal_error', message: 'Internal server error.' } });
     expect(response.body).not.toContain(secret);
@@ -119,10 +120,10 @@ describe('errors on a matched route', () => {
     app.get('/invalid', async () => {
       throw new AppError('validation_error', { details: [{ field: 'title', reason: 'empty' }] });
     });
-    const gone = await app.inject({ method: 'GET', url: '/gone' });
+    const gone = await injectLocal(app, { method: 'GET', url: '/gone' });
     expect(gone.statusCode).toBe(404);
     expect(gone.json()).toEqual({ error: { code: 'not_found', message: MESSAGE_BY_CODE.not_found } });
-    const invalid = await app.inject({ method: 'GET', url: '/invalid' });
+    const invalid = await injectLocal(app, { method: 'GET', url: '/invalid' });
     expect(invalid.statusCode).toBe(400);
     expect(invalid.json()).toEqual({ error: { code: 'validation_error', message: MESSAGE_BY_CODE.validation_error, details: [{ field: 'title', reason: 'empty' }] } });
     await app.close();
@@ -131,7 +132,7 @@ describe('errors on a matched route', () => {
   it('allows details only with validation_error', async () => {
     const { app } = appWith();
     app.get('/misuse', async (_request, reply) => sendError(reply, 'not_found', { details: [{ field: 'title', reason: 'empty' }] }));
-    expect((await app.inject({ method: 'GET', url: '/misuse' })).statusCode).toBe(500);
+    expect((await injectLocal(app, { method: 'GET', url: '/misuse' })).statusCode).toBe(500);
     await app.close();
   });
 });
