@@ -1,5 +1,6 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
+import { createServer } from 'node:net';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -44,6 +45,31 @@ describe('the real process', () => {
       expect(stderr).toBe('');
     } finally {
       child.kill('SIGKILL');
+    }
+  }, 30_000);
+
+  it('exits 1 with a clear message, no stack and no connection details when the port is in use', async () => {
+    const config = buildTestConfig();
+    const port = await freePort();
+    const blocker = createServer();
+    await new Promise<void>((resolveListen) => blocker.listen(port, '127.0.0.1', resolveListen));
+    try {
+      const child = spawn(tsx, ['src/index.ts'], {
+        cwd: apiRoot,
+        env: { ...baseEnv, DB_USER: config.dbUser, DB_PASSWORD: config.dbPassword.reveal(), DB_NAME: config.dbName, DB_HOST: config.dbHost, DB_PORT: String(config.dbPort), API_PORT: String(port) },
+      });
+      let stderr = '';
+      let stdout = '';
+      child.stdout.on('data', (chunk: Buffer) => (stdout += chunk.toString()));
+      child.stderr.on('data', (chunk: Buffer) => (stderr += chunk.toString()));
+      const code = await new Promise<number | null>((resolveExit) => child.once('exit', resolveExit));
+      expect(code).toBe(1);
+      expect(stderr).toBe(`The API cannot start: port ${port} is already in use. Stop the other program or change API_PORT in .env (see the README).\n`);
+      expect(stderr).not.toMatch(/\bat\s.+:\d+/);
+      expect(stdout + stderr).not.toContain(config.dbPassword.reveal());
+      expect(stdout).not.toContain('"msg":"listening"');
+    } finally {
+      blocker.close();
     }
   }, 30_000);
 
