@@ -11,6 +11,8 @@ const OUTPUT_LIMIT = 256 * 1024;
 export interface BoundedChild {
   stdout(): string;
   stderr(): string;
+  /** True once the child has exited. */
+  hasExited(): boolean;
   /** Resolves with the exit code, or null when the child was killed by a signal. */
   readonly exited: Promise<number | null>;
   /** Asks the child to stop (SIGTERM goes to the tsx wrapper, which passes it on to the API). */
@@ -33,8 +35,15 @@ export function spawnTsx(args: readonly string[], env: Readonly<Record<string, s
   child.stderr.on('data', (chunk: Buffer) => {
     err = (err + chunk.toString()).slice(-OUTPUT_LIMIT);
   });
-  const exited = new Promise<number | null>((resolveExit) => child.once('exit', resolveExit));
+  let done = false;
+  const exited = new Promise<number | null>((resolveExit) =>
+    child.once('exit', (code) => {
+      done = true;
+      resolveExit(code);
+    }),
+  );
   return {
+    hasExited: () => done,
     stdout: () => out,
     stderr: () => err,
     exited,
