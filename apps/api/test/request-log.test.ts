@@ -78,7 +78,8 @@ describe('what an error line carries', () => {
   it('has an error 5xx line with the runtime code and the fixed message, never the thrown text', async () => {
     const { port, capture } = await serve();
     const { line } = await lineFor(port, capture, { path: '/boom' });
-    expect(line['err']).toEqual({ code: 'XX000', message: 'Internal server error.' });
+    expect(line['err']).toMatchObject({ code: 'XX000', message: 'Internal server error.' });
+    expect(Object.keys(line['err'] as object).sort()).toEqual(['code', 'message', 'stack']);
   });
 
   it('names the code of a client-status error on a matched route and no message', async () => {

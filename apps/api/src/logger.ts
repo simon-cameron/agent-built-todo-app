@@ -40,6 +40,61 @@ export function describeError(error: unknown, key: FixedLogKey): { code: string;
   return { code: errorCode(error), message: FIXED_LOG_MESSAGES[key] };
 }
 
+const MAX_STACK_FRAMES = 6;
+const MAX_STACK_CHARACTERS = 1500;
+const MAX_FRAME_LINE_LENGTH = 300;
+/**
+ * A whole stack-frame line, nothing else: four spaces, `at`, an optional `async`, an optional function part (identifier characters and
+ * a few brackets, discarded) and a location of path characters, `node:` or `file://` plus `:line:col`. Node prints anonymous and async
+ * frames without the closing parenthesis, so it is optional. Only the captured location is ever kept.
+ */
+const FRAME_LINE = /^ {4}at (?:async )?(?:[A-Za-z0-9_$.<>[\] ]+ \()?((?:node:|file:\/\/)?[A-Za-z0-9_\-./\\@+~%]+:\d+:\d+)\)?$/;
+
+function frameLocation(line: string): string | undefined {
+  return line.length > MAX_FRAME_LINE_LENGTH ? undefined : FRAME_LINE.exec(line)?.[1];
+}
+
+/** The lines after the header, or undefined unless the message sits in a single-line header and a frame line follows it. */
+function linesAfterHeader(stack: string, message: string): string[] | undefined {
+  const start = message === '' ? Math.max(stack.indexOf('\n'), 0) : stack.indexOf(message);
+  if (start < 0) return undefined;
+  const header = stack.slice(0, start);
+  const rest = message === '' ? stack.slice(start) : stack.slice(start + message.length);
+  if (header.includes('\n') || !rest.startsWith('\n')) return undefined;
+  const lines = rest.slice(1).split('\n');
+  return frameLocation(lines[0] ?? '') === undefined ? undefined : lines;
+}
+
+/**
+ * The stack of an error as frame locations only, or undefined. Fails closed: the error's message is cut out of the stack, every kept line
+ * must be a strict frame line (function names are dropped, a line that does not match is dropped, never trimmed), and anything unexpected
+ * (a message changed after construction, a stack replaced by text, a getter that throws) gives no stack at all.
+ * At most 6 frames and 1500 characters, so a request that fails over and over cannot write long lines.
+ */
+export function safeStack(error: unknown): string | undefined {
+  let message: unknown;
+  let stack: unknown;
+  try {
+    if (!(error instanceof Error)) return undefined;
+    message = error.message;
+    stack = error.stack;
+  } catch {
+    return undefined;
+  }
+  if (typeof message !== 'string' || typeof stack !== 'string') return undefined;
+  const kept: string[] = [];
+  let length = 0;
+  for (const line of linesAfterHeader(stack, message) ?? []) {
+    const location = frameLocation(line);
+    if (location === undefined) continue;
+    const frame = `    at ${location}`;
+    if (kept.length === MAX_STACK_FRAMES || length + frame.length + 1 > MAX_STACK_CHARACTERS) break;
+    kept.push(frame);
+    length += frame.length + 1;
+  }
+  return kept.length === 0 ? undefined : kept.join('\n');
+}
+
 /** One JSON logger: level as a label, ISO UTC time, no pid or hostname. The default destination is synchronous so lines survive process.exit. */
 export function createLogger(destination: DestinationStream = pino.destination({ fd: 1, sync: true })): pino.Logger {
   return pino(

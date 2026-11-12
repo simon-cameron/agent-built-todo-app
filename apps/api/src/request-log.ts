@@ -1,8 +1,8 @@
 import type { FastifyBaseLogger, FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 /**
- * What a request's log line may say about an error: a safe code and, for server errors, a fixed message.
- * `stack` is reserved for the ticket that adds stack traces to 5xx lines (ADR Decision 12); nothing sets it yet.
+ * What a request's log line may say about an error: a safe code and, for server errors, a fixed message and the stack as frame
+ * locations only (see safeStack in logger.ts). A 4xx line keeps the code alone.
  */
 export interface ErrorInfo {
   readonly code: string;
@@ -60,7 +60,7 @@ export interface RequestLine {
 
 /**
  * The one place a request line is built, so the response hook and the framework-error handler cannot drift apart.
- * info for 2xx and 3xx, warn for 4xx (error code only), error for 5xx (code, fixed message, stack when a later ticket records one).
+ * info for 2xx and 3xx, warn for 4xx (error code only), error for 5xx (code, fixed message, frames-only stack).
  * Nothing from headers, bodies, the query or the raw error text can enter.
  */
 export function buildRequestLine(input: RequestLineInput): RequestLine {

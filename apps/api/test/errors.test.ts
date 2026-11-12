@@ -170,9 +170,9 @@ describe('mapError', () => {
 
   it('pins which code a log line carries: the driver or runtime code for 5xx, the contract code for 4xx', () => {
     const driver = mapError(Object.assign(new Error('failed'), { code: 'XX000' }), live);
-    expect(driver.logged).toEqual({ code: 'XX000', message: MESSAGE_BY_CODE.internal_error });
+    expect(driver.logged).toMatchObject({ code: 'XX000', message: MESSAGE_BY_CODE.internal_error });
     const outage = mapError(Object.assign(new Error('connect failed'), { code: 'ECONNREFUSED' }), live);
-    expect(outage.logged).toEqual({ code: 'ECONNREFUSED', message: MESSAGE_BY_CODE.database_unavailable });
+    expect(outage.logged).toMatchObject({ code: 'ECONNREFUSED', message: MESSAGE_BY_CODE.database_unavailable });
     const contract = mapError(new AppError('not_found'), live);
     expect(contract.logged).toEqual({ code: 'not_found' });
     expect(mapError(clientError('x'), { is404: true }).logged).toEqual({ code: 'route_not_found' });
