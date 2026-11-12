@@ -47,8 +47,8 @@ describe('GET /health with the real test database', () => {
   });
 });
 
-describe('the minimal error handler', () => {
-  it('keeps a client status with a fixed body', async () => {
+describe('the error handlers', () => {
+  it('answers a client error on a matched route with a fixed 500, never its text', async () => {
     const marker = randomBytes(12).toString('hex');
     const capture = captureLogger();
     const app = buildApp({ config, pool: stubPool(async () => ({ rows: [] })), logger: capture.logger });
@@ -56,17 +56,17 @@ describe('the minimal error handler', () => {
       throw Object.assign(new Error(`client mistake ${marker}`), { statusCode: 400 });
     });
     const response = await app.inject({ method: 'GET', url: '/bad' });
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual({ error: { code: 'request_error', message: 'Request could not be processed.' } });
+    expect(response.statusCode).toBe(500);
+    expect(response.json()).toEqual({ error: { code: 'internal_error', message: 'Internal server error.' } });
     expect(response.body + capture.lines.join('\n')).not.toContain(marker);
     await app.close();
   });
 
-  it('keeps the status of a malformed request line', async () => {
+  it('answers a malformed request line with 404 route_not_found', async () => {
     const app = buildApp({ config, pool: stubPool(async () => ({ rows: [] })), logger: captureLogger().logger });
     const response = await app.inject({ method: 'GET', url: '/health/%' });
-    expect(response.statusCode).toBe(400);
-    expect(response.json()).toEqual({ error: { code: 'request_error', message: 'Request could not be processed.' } });
+    expect(response.statusCode).toBe(404);
+    expect(response.json()).toEqual({ error: { code: 'route_not_found', message: 'No such route.' } });
     await app.close();
   });
 
