@@ -1,4 +1,6 @@
 import { randomBytes } from 'node:crypto';
+import { setTimeout as delay } from 'node:timers/promises';
+import type pg from 'pg';
 import { describe, expect, it } from 'vitest';
 import { MESSAGE_BY_CODE } from '../src/errors';
 import { spawnTsx } from './child';
@@ -86,6 +88,133 @@ describe('the database connection is cut and restored', () => {
       expect((await health(port)).status).toBe(200);
       expect(instance.pool.ended).toBe(false);
       expect(crashes.seen()).toEqual([]);
+    } finally {
+      crashes.stop();
+    }
+  }, 60_000);
+});
+
+describe('a query is in flight when the connection is destroyed', () => {
+  it('answers 503 with the fixed code CONNECTION_LOST, which pins the fourth driver text against the real driver', async ({ annotate }) => {
+    const crashes = watchForCrashes();
+    try {
+      const holder: { pool?: pg.Pool } = {};
+      const ctx = await startOutageServer((app) => {
+        app.get('/slow', async () => {
+          await holder.pool?.query('SELECT pg_sleep($1)', [3]);
+          return { status: 'ok' };
+        });
+      });
+      const { proxy, port, capture, instance } = ctx;
+      holder.pool = instance.pool;
+      const pending = fetch(`http://127.0.0.1:${port}/slow`, { signal: AbortSignal.timeout(20_000) });
+      await delay(500);
+
+      proxy.cut();
+      const response = await pending;
+      expect(response.status).toBe(503);
+      expect(await response.json()).toEqual(UNAVAILABLE_BODY);
+      const line = requestLines(capture.records()).at(-1) as LogRecord;
+      expect(line).toMatchObject({ level: 'error', status: 503, path: '/slow', err: { code: 'CONNECTION_LOST', message: MESSAGE_BY_CODE.database_unavailable } });
+      expectFramesOnly((line['err'] as { stack: unknown }).stack);
+
+      await proxy.restore();
+      const recovery = await pollForRecovery(port);
+      await annotate(`cut under an in-flight query: 503 CONNECTION_LOST, back to 200 ${recovery.elapsedMs} ms after restore`);
+      expect(instance.pool.ended).toBe(false);
+      expect(crashes.seen()).toEqual([]);
+    } finally {
+      crashes.stop();
+    }
+  }, 60_000);
+});
+
+describe('the database accepts connections and never replies', () => {
+  /** What every blackhole case must show after the failure: an error line, no crash, and the same app and pool serving 200 again. */
+  async function expectRecovery(ctx: Awaited<ReturnType<typeof startOutageServer>>, label: string, annotate: (message: string) => Promise<unknown>, crashes: ReturnType<typeof watchForCrashes>) {
+    const { proxy, port, capture, instance } = ctx;
+    const { app, pool } = instance;
+    await proxy.restore();
+    const recovery = await pollForRecovery(port);
+    await annotate(`${label}: back to 200 ${recovery.elapsedMs} ms after restore (${recovery.attempts} polls, limit 30000 ms)`);
+    expect(recovery.elapsedMs).toBeLessThan(30_000);
+    expect(instance.app).toBe(app);
+    expect(instance.pool).toBe(pool);
+    expect(pool.ended).toBe(false);
+    expect(capture.records().filter((record) => record.msg === 'listening')).toHaveLength(1);
+    expect(crashes.seen()).toEqual([]);
+    expect(capture.lines.join('\n')).not.toContain(`127.0.0.1:${proxy.port}`);
+  }
+
+  it('answers 503 within the connection timeout when a new connection is never answered', async ({ annotate }) => {
+    const crashes = watchForCrashes();
+    try {
+      const ctx = await startOutageServer();
+      const { proxy, port, capture, instance } = ctx;
+      // Leave the pool with no client, then listen again as a database that never answers.
+      proxy.cut();
+      await expect.poll(() => instance.pool.totalCount, { timeout: 5000 }).toBe(0);
+      await proxy.restore();
+      proxy.blackhole();
+
+      const answer = await health(port);
+      await annotate(`blackhole, new connection: 503 after ${answer.elapsedMs} ms (connection timeout 2000 ms)`);
+      expect(answer.status).toBe(503);
+      expect(answer.body).toEqual(UNAVAILABLE_BODY);
+      expect(answer.elapsedMs).toBeGreaterThanOrEqual(1500);
+      expect(answer.elapsedMs).toBeLessThan(6000);
+      expect(requestLines(capture.records()).at(-1)).toMatchObject({ level: 'error', status: 503, err: { code: 'CONNECT_TIMEOUT', message: MESSAGE_BY_CODE.database_unavailable } });
+
+      await expectRecovery(ctx, 'blackhole, new connection', annotate, crashes);
+    } finally {
+      crashes.stop();
+    }
+  }, 60_000);
+
+  it('answers 503 within the query timeout when a query on a warm client is never answered', async ({ annotate }) => {
+    const crashes = watchForCrashes();
+    try {
+      const ctx = await startOutageServer();
+      const { proxy, port, capture } = ctx;
+      expect((await health(port)).status).toBe(200);
+      proxy.blackhole();
+
+      const answer = await health(port);
+      await annotate(`blackhole, hung query: 503 after ${answer.elapsedMs} ms (query timeout 5000 ms)`);
+      expect(answer.status).toBe(503);
+      expect(answer.body).toEqual(UNAVAILABLE_BODY);
+      expect(answer.elapsedMs).toBeGreaterThanOrEqual(4500);
+      expect(answer.elapsedMs).toBeLessThan(9000);
+      expect(requestLines(capture.records()).at(-1)).toMatchObject({ level: 'error', status: 503, err: { code: 'QUERY_TIMEOUT', message: MESSAGE_BY_CODE.database_unavailable } });
+
+      await expectRecovery(ctx, 'blackhole, hung query', annotate, crashes);
+    } finally {
+      crashes.stop();
+    }
+  }, 60_000);
+
+  it('answers 503 for every request when all five pooled clients hang, the sixth with the pool timeout', async ({ annotate }) => {
+    const crashes = watchForCrashes();
+    try {
+      const ctx = await startOutageServer();
+      const { proxy, port, capture, instance } = ctx;
+      const held = await Promise.all(Array.from({ length: 5 }, () => instance.pool.connect()));
+      for (const client of held) client.release();
+      proxy.blackhole();
+
+      const answers = await Promise.all(Array.from({ length: 6 }, () => health(port)));
+      const slowest = Math.max(...answers.map((answer) => answer.elapsedMs));
+      await annotate(`blackhole, five hung clients plus a sixth request: six 503s, slowest ${slowest} ms, fastest ${Math.min(...answers.map((answer) => answer.elapsedMs))} ms`);
+      for (const answer of answers) {
+        expect(answer.status).toBe(503);
+        expect(answer.body).toEqual(UNAVAILABLE_BODY);
+      }
+      expect(slowest).toBeLessThan(9000);
+      await expect.poll(() => requestLines(capture.records()).filter((line) => line['status'] === 503).length).toBe(6);
+      const codes = requestLines(capture.records()).map((line) => (line['err'] as { code: string }).code);
+      expect(codes.sort()).toEqual(['POOL_TIMEOUT', 'QUERY_TIMEOUT', 'QUERY_TIMEOUT', 'QUERY_TIMEOUT', 'QUERY_TIMEOUT', 'QUERY_TIMEOUT']);
+
+      await expectRecovery(ctx, 'blackhole, pool exhausted', annotate, crashes);
     } finally {
       crashes.stop();
     }

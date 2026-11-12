@@ -1,4 +1,5 @@
 import { setTimeout as delay } from 'node:timers/promises';
+import type { FastifyInstance } from 'fastify';
 import { afterEach } from 'vitest';
 import { buildTestConfig } from './db-setup';
 import { startDbProxy, type DbProxy } from './db-proxy';
@@ -18,12 +19,12 @@ export function outageTeardownAfterEach(): void {
   });
 }
 
-/** The real app, listener and pool, with the database behind a test proxy. */
-export async function startOutageServer() {
+/** The real app, listener and pool, with the database behind a test proxy. `extraRoutes` adds test-only routes to the built app. */
+export async function startOutageServer(extraRoutes: (app: FastifyInstance) => void = () => undefined) {
   const config = buildTestConfig();
   const proxy = await startDbProxy({ host: config.dbHost, port: config.dbPort });
   proxies.push(proxy);
-  const server = await startTestServer(undefined, { dbPort: proxy.port });
+  const server = await startTestServer(extraRoutes, { dbPort: proxy.port });
   return { proxy, ...server };
 }
 
