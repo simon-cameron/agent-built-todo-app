@@ -86,6 +86,9 @@ importers:
       globals:
         specifier: 'catalog:'
         version: 17.14.0
+      tsx:
+        specifier: 'catalog:'
+        version: 4.23.15
       typescript:
         specifier: 'catalog:'
         version: 6.0.3
