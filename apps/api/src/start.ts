@@ -87,7 +87,7 @@ export async function start(options: StartOptions): Promise<RunningApp> {
     logger.info(address, 'listening');
     return { app, pool, address, stop };
   } catch (error) {
-    await stop().catch((cleanupError: unknown) => logger.error({ err: describeError(cleanupError) }, 'cleanup after failed start failed'));
+    await stop().catch((cleanupError: unknown) => logger.error({ err: describeError(cleanupError, 'cleanup after failed start failed') }, 'cleanup after failed start failed'));
     throw error;
   }
 }
@@ -110,7 +110,7 @@ export function handleSignals(running: Pick<RunningApp, 'stop'>, { signals, exit
       running.stop().then(
         () => exit(0),
         (error: unknown) => {
-          logger.error({ err: describeError(error) }, 'shutdown failed');
+          logger.error({ err: describeError(error, 'shutdown failed') }, 'shutdown failed');
           exit(1);
         },
       );

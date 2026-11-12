@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url';
 import type pg from 'pg';
 import { loadConfig, type AppConfig } from '../src/config';
 import { createPool } from '../src/db/pool';
-import { describeError, errorCode, type Logger } from '../src/logger';
+import { errorCode, type Logger } from '../src/logger';
 
 /*
  * The only file in the repository allowed to issue TRUNCATE, DROP or CREATE DATABASE
@@ -152,7 +152,6 @@ export async function withDatabaseHint<T>(action: () => Promise<T>): Promise<T> 
   try {
     return await action();
   } catch (error) {
-    const { code } = describeError(error);
-    throw new Error(`The test database is not usable (error code ${code}). Start it with: docker compose up -d --wait`);
+    throw new Error(`The test database is not usable (error code ${errorCode(error)}). Start it with: docker compose up -d --wait`);
   }
 }

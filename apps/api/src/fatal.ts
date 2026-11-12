@@ -20,8 +20,11 @@ export interface ProcessEvents {
 export function installFatalHandlers(events: ProcessEvents, write: (text: string) => void, exit: (code: number) => void): void {
   for (const event of ['uncaughtException', 'unhandledRejection'] as const) {
     events.on(event, (reason) => {
-      write(fatalLine(reason));
-      exit(1);
+      try {
+        write(fatalLine(reason));
+      } finally {
+        exit(1);
+      }
     });
   }
 }
@@ -50,7 +53,10 @@ export async function runMain(dependencies: MainDependencies): Promise<void> {
     const running = await start({ ...dependencies.startOverrides, config: result.config, logger });
     handleSignals(running, { signals, exit, logger });
   } catch (error) {
-    writeError(error instanceof StartupError ? `${error.message}\n` : fatalLine(error));
-    exit(1);
+    try {
+      writeError(error instanceof StartupError ? `${error.message}\n` : fatalLine(error));
+    } finally {
+      exit(1);
+    }
   }
 }

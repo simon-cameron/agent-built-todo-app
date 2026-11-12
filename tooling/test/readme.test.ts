@@ -41,6 +41,13 @@ describe('README', () => {
     }
   });
 
+  it('explains what a database outage looks like and that no API restart is needed', () => {
+    const troubleshooting = section('Troubleshooting');
+    for (const text of ['503 `database_unavailable`', 'nothing needs restarting', 'within 30 seconds', 'with no API restart', 'docker compose up -d --wait', 'never database or connection details']) {
+      expect(troubleshooting, text).toContain(text);
+    }
+  });
+
   it('gives the API URL as the literal address and port', () => {
     expect(section('Setup')).toContain('`http://127.0.0.1:3001`');
     expect(section('Setup')).toMatch(/not `localhost`/);

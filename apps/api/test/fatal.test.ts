@@ -125,4 +125,44 @@ describe('fatalLine and installFatalHandlers', () => {
     expect(written).toEqual([`${FATAL_MESSAGE} (code: unknown)\n`]);
     expect(exits).toEqual([1]);
   });
+
+  it('survives an error whose code getter throws: it prints the fixed sentence with code unknown', () => {
+    const hostile = {
+      get code(): string {
+        throw new Error('getter text');
+      },
+    };
+    expect(fatalLine(hostile)).toBe(`${FATAL_MESSAGE} (code: unknown)\n`);
+    expect(fatalLine(null)).toBe(`${FATAL_MESSAGE} (code: unknown)\n`);
+  });
+
+  it.each(['uncaughtException', 'unhandledRejection'] as const)('still exits 1 for %s when writing fails', (event) => {
+    const proc = new EventEmitter();
+    const exits: number[] = [];
+    installFatalHandlers(
+      proc,
+      () => {
+        throw new Error('stderr is closed');
+      },
+      (code) => exits.push(code),
+    );
+    expect(() => proc.emit(event, new Error('x'))).toThrow('stderr is closed');
+    expect(exits).toEqual([1]);
+  });
+});
+
+describe('runMain when writing the failure fails', () => {
+  it('still exits 1', async () => {
+    const exits: number[] = [];
+    const failure = runMain({
+      env: {},
+      writeError: () => {
+        throw new Error('stderr is closed');
+      },
+      exit: (code) => exits.push(code),
+      signals: new EventEmitter(),
+    });
+    await expect(failure).rejects.toThrow('stderr is closed');
+    expect(exits).toEqual([1]);
+  });
 });
