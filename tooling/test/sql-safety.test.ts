@@ -1,29 +1,17 @@
-import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, relative, resolve } from 'node:path';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { filesMatching, sourceFiles } from './source-scan';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const SCANNED_FOLDERS = ['apps', 'packages', 'tooling'];
 const ALLOWED_FILES = new Set(['apps/api/test/db-setup.ts', 'tooling/test/sql-safety.test.ts']);
-const SKIPPED_FOLDERS = new Set(['node_modules', 'fixtures']);
 const DESTRUCTIVE = /\bTRUNCATE\b|\bDROP\s+(TABLE|DATABASE|SCHEMA|ROLE|USER|INDEX|VIEW|TYPE|SEQUENCE|OWNED)\b|\bCREATE\s+DATABASE\b/i;
-
-function sourceFiles(folder: string): string[] {
-  return readdirSync(folder, { withFileTypes: true }).flatMap((entry) => {
-    const path = resolve(folder, entry.name);
-    if (entry.isDirectory()) return SKIPPED_FOLDERS.has(entry.name) ? [] : sourceFiles(path);
-    return /\.(ts|tsx|mjs|js|sql)$/.test(entry.name) ? [path] : [];
-  });
-}
 
 describe('destructive SQL stays in the test harness', () => {
   it('appears in no file except db-setup.ts', () => {
-    const offenders = SCANNED_FOLDERS.flatMap((folder) => sourceFiles(resolve(root, folder)))
-      .map((path) => relative(root, path))
-      .filter((path) => !ALLOWED_FILES.has(path))
-      .filter((path) => DESTRUCTIVE.test(readFileSync(resolve(root, path), 'utf8')));
-    expect(offenders).toEqual([]);
+    expect(filesMatching(root, DESTRUCTIVE, ALLOWED_FILES)).toEqual([]);
   });
 
   it('the migration SQL contains none of it', () => {
@@ -44,6 +32,22 @@ describe('destructive SQL stays in the test harness', () => {
         expect(command, `${manifest} ${name}`).not.toMatch(/drizzle-kit\s+(push|drop|studio|migrate)\b/);
       }
       expect(Object.keys(scripts).filter((name) => /^db:(push|drop|migrate|studio)$/.test(name)), manifest).toEqual([]);
+    }
+  });
+
+  it('scans fixtures folders outside the lint fixtures, and every source extension', () => {
+    const scratch = mkdtempSync(resolve(tmpdir(), 'sql-scan-'));
+    try {
+      for (const file of ['apps/x/test/fixtures/a.ts', 'apps/x/src/b.cjs', 'apps/x/src/c.mts', 'packages/y/src/d.cts', 'tooling/fixtures/lint/skipped.ts']) {
+        mkdirSync(dirname(resolve(scratch, file)), { recursive: true });
+        writeFileSync(resolve(scratch, file), 'TRUNCATE things;\n');
+      }
+      mkdirSync(resolve(scratch, 'apps/x/node_modules/z'), { recursive: true });
+      writeFileSync(resolve(scratch, 'apps/x/node_modules/z/e.js'), 'TRUNCATE things;\n');
+      expect(filesMatching(scratch, DESTRUCTIVE).sort()).toEqual(['apps/x/src/b.cjs', 'apps/x/src/c.mts', 'apps/x/test/fixtures/a.ts', 'packages/y/src/d.cts']);
+      expect(sourceFiles(scratch, resolve(scratch, 'tooling')).sort()).toEqual([]);
+    } finally {
+      rmSync(scratch, { recursive: true, force: true });
     }
   });
 });
