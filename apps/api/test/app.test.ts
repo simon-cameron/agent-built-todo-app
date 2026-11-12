@@ -26,12 +26,14 @@ describe('GET /health with the real test database', () => {
     await app.close();
   });
 
-  it('writes no per-request log line', async () => {
+  it('writes exactly one request line, with no headers in it', async () => {
     const capture = captureLogger();
     const app = buildApp({ config, pool, logger: capture.logger });
-    await app.inject({ method: 'GET', url: '/health' });
+    await app.inject({ method: 'GET', url: '/health', headers: { 'x-extra': 'present' } });
     await app.close();
-    expect(capture.lines).toEqual([]);
+    expect(capture.records()).toHaveLength(1);
+    expect(capture.records()[0]).toMatchObject({ level: 'info', msg: 'request completed', method: 'GET', path: '/health', status: 200 });
+    expect(capture.lines.join('\n')).not.toContain('x-extra');
   });
 
   it('answers HEAD', async () => {
@@ -81,7 +83,8 @@ describe('the error handlers', () => {
     expect(response.statusCode).toBe(500);
     expect(response.json()).toEqual({ error: { code: 'internal_error', message: 'Internal server error.' } });
     expect(response.body + capture.lines.join('\n')).not.toContain(marker);
-    expect(capture.records().find((record) => record.msg === 'request failed')).toMatchObject({ level: 'error', err: { code: 'ECONNREFUSED', message: 'connect failed' } });
+    expect(capture.records()).toHaveLength(1);
+    expect(capture.records()[0]).toMatchObject({ level: 'error', msg: 'request completed', status: 500, err: { code: 'ECONNREFUSED', message: 'Internal server error.' } });
     await app.close();
   });
 

@@ -99,4 +99,16 @@ describe('the logger redacts password fields as a second layer', () => {
     logger.info({ config: result.config }, 'config');
     expect(lines.join('')).not.toContain(marker);
   });
+
+  it('writes an err object as given, and reduces a real Error to its code so no driver property or stack is printed', () => {
+    const marker = generated();
+    const lines: string[] = [];
+    const logger = createLogger({ write: (chunk: string) => void lines.push(chunk) });
+    logger.error({ err: { code: 'XX000', message: 'fixed' } }, 'plain');
+    logger.error({ err: Object.assign(new Error(marker), { code: 'XX000', detail: marker, query: marker }) }, 'real');
+    const [plain, real] = lines.map((line) => JSON.parse(line) as { err: unknown });
+    expect(plain?.err).toEqual({ code: 'XX000', message: 'fixed' });
+    expect(real?.err).toEqual({ code: 'XX000' });
+    expect(lines.join('')).not.toContain(marker);
+  });
 });

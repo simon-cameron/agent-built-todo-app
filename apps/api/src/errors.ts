@@ -1,6 +1,6 @@
-import type { FastifyBaseLogger, FastifyReply, FastifyRequest } from 'fastify';
+import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { ErrorCode, ValidationDetail } from '@todo/shared';
-import { describeError, errorCode } from './logger';
+import { errorCode } from './logger';
 import { recordErrorInfo, type ErrorInfo } from './request-log';
 
 /** A failure with a message that is safe to print as is; the process exits with code 1. */
@@ -135,13 +135,9 @@ export function mapError(error: unknown, request: Pick<FastifyRequest, 'is404'>)
   return mapped('internal_error', { code: errorCode(error), message: MESSAGE_BY_CODE.internal_error });
 }
 
-/**
- * Answers an error through the one envelope. Used by both Fastify error handlers.
- * The separate 'request failed' line for an unexpected error is S2's and stays until the request log writes one merged line per request.
- */
-export function replyWithError(error: unknown, request: FastifyRequest, reply: FastifyReply, log: Pick<FastifyBaseLogger, 'error'>): FastifyReply {
+/** Answers an error through the one envelope. Used by both Fastify error handlers; the request log writes the only line. */
+export function replyWithError(error: unknown, request: FastifyRequest, reply: FastifyReply): FastifyReply {
   const result = mapError(error, request);
   recordErrorInfo(request, result.logged);
-  if (result.logged.message !== undefined) log.error({ err: describeError(error) }, 'request failed');
   return reply.code(result.status).send(buildBody(result.code, result.options));
 }

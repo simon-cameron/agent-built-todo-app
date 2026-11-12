@@ -2,6 +2,7 @@ import Fastify, { LogController, type FastifyBaseLogger, type FastifyInstance } 
 import type pg from 'pg';
 import type { AppConfig } from './config';
 import { replyWithError, sendError } from './errors';
+import { logRequest, registerRequestLog } from './request-log';
 
 export interface AppDependencies {
   readonly config: AppConfig;
@@ -16,14 +17,18 @@ export interface AppDependencies {
 export function buildApp({ pool, logger }: AppDependencies): FastifyInstance {
   const app = Fastify({
     loggerInstance: logger,
+    // A client cannot choose the request id: the Fastify counter is the only source.
+    requestIdHeader: false,
     // Same as the design's disableRequestLogging: true (the default request log includes headers); that top-level option is deprecated.
     logController: new LogController({ disableRequestLogging: true }),
     // Errors Fastify raises before routing (for example a bad URL) skip the error handler; both end in the same mapper.
     frameworkErrors: (error, request, reply) => {
-      replyWithError(error, request, reply, logger);
+      replyWithError(error, request, reply);
+      logRequest(logger, request, reply);
     },
   });
-  app.setErrorHandler((error, request, reply) => replyWithError(error, request, reply, app.log));
+  app.setErrorHandler((error, request, reply) => replyWithError(error, request, reply));
+  registerRequestLog(app, logger);
   app.setNotFoundHandler((_request, reply) => sendError(reply, 'route_not_found'));
 
   app.get('/health', async () => {
