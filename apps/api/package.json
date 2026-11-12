@@ -9,6 +9,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@todo/shared": "workspace:*"
+    "@todo/shared": "workspace:*",
+    "zod": "catalog:"
   }
 }
