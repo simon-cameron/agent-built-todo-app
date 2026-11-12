@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import { errorCodes } from 'fastify';
 import { ERROR_CODES } from '@todo/shared';
 import type pg from 'pg';
 import { describe, expect, it } from 'vitest';
@@ -11,7 +12,12 @@ import { injectLocal } from './request';
 const config = buildTestConfig();
 const quietPool = { query: async () => ({ rows: [] }) } as unknown as pg.Pool;
 const marker = (): string => randomBytes(12).toString('hex');
-const clientError = (text: string, code = 'FST_ERR_CTP_INVALID_JSON_BODY'): Error => Object.assign(new Error(text), { statusCode: 400, code });
+const clientError = (text: string, code = 'FST_ERR_VALIDATION'): Error => Object.assign(new Error(text), { statusCode: 400, code });
+
+/** The body the reply would carry for a mapped error. */
+function buildBodyOf(result: ReturnType<typeof mapError>): unknown {
+  return { error: { code: result.code, message: result.options.message ?? MESSAGE_BY_CODE[result.code] } };
+}
 
 function appWith(capture = captureLogger()) {
   return { app: buildApp({ config, pool: quietPool, logger: capture.logger }), capture };
@@ -163,8 +169,10 @@ describe('mapError', () => {
   });
 
   it('pins which code a log line carries: the driver or runtime code for 5xx, the contract code for 4xx', () => {
-    const driver = mapError(Object.assign(new Error('connect failed'), { code: 'ECONNREFUSED' }), live);
-    expect(driver.logged).toEqual({ code: 'ECONNREFUSED', message: MESSAGE_BY_CODE.internal_error });
+    const driver = mapError(Object.assign(new Error('failed'), { code: 'XX000' }), live);
+    expect(driver.logged).toEqual({ code: 'XX000', message: MESSAGE_BY_CODE.internal_error });
+    const outage = mapError(Object.assign(new Error('connect failed'), { code: 'ECONNREFUSED' }), live);
+    expect(outage.logged).toEqual({ code: 'ECONNREFUSED', message: MESSAGE_BY_CODE.database_unavailable });
     const contract = mapError(new AppError('not_found'), live);
     expect(contract.logged).toEqual({ code: 'not_found' });
     expect(mapError(clientError('x'), { is404: true }).logged).toEqual({ code: 'route_not_found' });
@@ -179,5 +187,45 @@ describe('mapError', () => {
     for (const error of [new Error(secret), clientError(secret), Object.assign(new Error(secret), { code: 'XX000', detail: secret })]) {
       expect(JSON.stringify(mapError(error, live).logged)).not.toContain(secret);
     }
+  });
+
+  it('maps both Fastify body-parse errors to 400 malformed_json with the fixed message and the contract code only in the log', () => {
+    const secret = marker();
+    for (const make of [() => new errorCodes.FST_ERR_CTP_INVALID_JSON_BODY(), () => new errorCodes.FST_ERR_CTP_EMPTY_JSON_BODY()]) {
+      const result = mapError(make(), live);
+      expect(result).toMatchObject({ status: 400, code: 'malformed_json', options: {}, logged: { code: 'malformed_json' } });
+      expect(buildBodyOf(result)).toEqual({ error: { code: 'malformed_json', message: MESSAGE_BY_CODE.malformed_json } });
+    }
+    const quoting = Object.assign(new errorCodes.FST_ERR_CTP_INVALID_JSON_BODY(), { message: `Unexpected token ${secret} in JSON at position 3` });
+    expect(JSON.stringify(mapError(quoting, live))).not.toContain(secret);
+  });
+
+  it('matches a parse error by its code, never by a message that merely looks like one', () => {
+    expect(mapError(clientError('Body is not valid JSON but content-type is set to application/json', 'FST_ERR_OTHER'), live)).toMatchObject({ status: 500, code: 'internal_error' });
+  });
+
+  it('keeps the rule order: an unknown route is 404, an AppError keeps its code, and 413 and 415 still reach the interim rule', () => {
+    expect(mapError(new errorCodes.FST_ERR_CTP_INVALID_JSON_BODY(), { is404: true })).toMatchObject({ status: 404, code: 'route_not_found' });
+    expect(mapError(Object.assign(new AppError('not_found'), { code: 'not_found' }), live)).toMatchObject({ status: 404, code: 'not_found' });
+    expect(mapError(Object.assign(new Error('x'), { code: 'ECONNREFUSED' }), { is404: true })).toMatchObject({ status: 404, code: 'route_not_found' });
+    for (const [code, statusCode] of [['FST_ERR_CTP_BODY_TOO_LARGE', 413], ['FST_ERR_CTP_INVALID_MEDIA_TYPE', 415]] as const) {
+      const error = Object.assign(new Error('quoted input'), { code, statusCode });
+      expect(mapError(error, live)).toMatchObject({ status: 500, code: 'internal_error', logged: { code } });
+    }
+  });
+
+  it('answers a database outage from a thrown error with 503 and the contract body, and logs a safe code and the fixed message', async () => {
+    const secret = marker();
+    const { app, capture } = appWith();
+    app.get('/down', async () => {
+      throw Object.assign(new Error(`connect ECONNREFUSED 127.0.0.1:5432 ${secret}`), { code: 'ECONNREFUSED' });
+    });
+    const response = await injectLocal(app, { method: 'GET', url: '/down' });
+    expect(response.statusCode).toBe(503);
+    expect(response.json()).toEqual({ error: { code: 'database_unavailable', message: 'The database is not reachable. Try again shortly.' } });
+    expect(capture.records()).toHaveLength(1);
+    expect(capture.records()[0]).toMatchObject({ level: 'error', status: 503, err: { code: 'ECONNREFUSED', message: 'The database is not reachable. Try again shortly.' } });
+    expect(response.body + capture.lines.join('\n')).not.toContain(secret);
+    await app.close();
   });
 });

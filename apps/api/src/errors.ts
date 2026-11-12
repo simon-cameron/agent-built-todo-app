@@ -1,5 +1,6 @@
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import type { ErrorCode, ValidationDetail } from '@todo/shared';
+import { classifyDatabaseFailure } from './db/failure';
 import { errorCode } from './logger';
 import { recordErrorInfo, type ErrorInfo } from './request-log';
 
@@ -78,7 +79,7 @@ function buildBody(code: ErrorCode, options: ErrorOptions): ErrorBody {
 
 /** What the log line records for a contract code answered on purpose: the code, plus the fixed message for a server error. */
 function contractInfo(code: ErrorCode): ErrorInfo {
-  return STATUS_BY_CODE[code] >= 500 ? { code, message: MESSAGE_BY_CODE.internal_error } : { code };
+  return STATUS_BY_CODE[code] >= 500 ? { code, message: MESSAGE_BY_CODE[code] } : { code };
 }
 
 /** The only way a hook or handler writes an error response. Records what the request log may say about it. */
@@ -109,9 +110,12 @@ function clientStatus(error: unknown): number | undefined {
   return typeof statusCode === 'number' && Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 500 ? statusCode : undefined;
 }
 
+/** Fastify's own codes for a body that is not valid JSON, or empty with a JSON content type. Matched by code, never by message, which quotes input. */
+const MALFORMED_JSON_CODES: ReadonlySet<string> = new Set(['FST_ERR_CTP_INVALID_JSON_BODY', 'FST_ERR_CTP_EMPTY_JSON_BODY']);
+
 /**
  * Ordered rules, first match wins. Later tickets insert rules before the fallback instead of rewriting this list:
- * the database and timeout rules (503) and the parser rules (malformed_json, payload_too_large, unsupported_media_type).
+ * the parser rules payload_too_large and unsupported_media_type go before the interim client-error rule.
  */
 export const ERROR_RULES: readonly ErrorRule[] = [
   // An error thrown on purpose keeps its own contract code.
@@ -120,13 +124,23 @@ export const ERROR_RULES: readonly ErrorRule[] = [
   (_error, request) => (request.is404 ? mapped('route_not_found') : undefined),
   // A malformed URL such as /health/% is raised before routing.
   (error) => (errorCode(error) === 'FST_ERR_BAD_URL' ? mapped('route_not_found') : undefined),
+  // A body that is not valid JSON. The log carries the contract code only.
+  (error) => (MALFORMED_JSON_CODES.has(errorCode(error)) ? mapped('malformed_json') : undefined),
+  // The database cannot be reached: a connection error or a pool or query timeout. The log carries a safe code and the fixed message.
+  (error) => {
+    const failure = classifyDatabaseFailure(error);
+    return failure === undefined ? undefined : mapped('database_unavailable', { code: failure.code, message: MESSAGE_BY_CODE.database_unavailable });
+  },
   // Any other client error has no contract code yet: answer 500 and log its code only, never its text.
   (error) => (clientStatus(error) === undefined ? undefined : mapped('internal_error', { code: errorCode(error) })),
   // Everything else: generic 500. The code is the runtime or driver code, the message is fixed.
   (error) => mapped('internal_error', { code: errorCode(error), message: MESSAGE_BY_CODE.internal_error }),
 ];
 
-/** Maps any error to a contract code and a log-safe record. Never reads the error's message. */
+/**
+ * Maps any error to a contract code and a log-safe record. The record never contains the error's message or any other text of the error.
+ * Only the database rule reads the message, to compare it with fixed driver texts (see db/failure.ts); it is never copied out.
+ */
 export function mapError(error: unknown, request: Pick<FastifyRequest, 'is404'>): MappedError {
   for (const rule of ERROR_RULES) {
     const result = rule(error, request);
