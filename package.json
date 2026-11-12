@@ -11,7 +11,7 @@
     "test:e2e": "node tooling/not-yet.mjs test:e2e 6",
     "lint": "eslint .",
     "typecheck": "pnpm -r typecheck && tsc -p tooling/tsconfig.json --noEmit",
-    "db:generate": "node tooling/not-yet.mjs db:generate 2",
+    "db:generate": "pnpm --filter @todo/api db:generate",
     "check:exposure": "node tooling/not-yet.mjs check:exposure 3",
     "audit": "pnpm audit --audit-level high"
   },
@@ -23,6 +23,7 @@
     "globals": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "yaml": "catalog:"
   }
 }

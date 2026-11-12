@@ -13,8 +13,58 @@ catalog:
   vitest: 5.1.0
   '@types/node': 24.19.2
   zod: 4.6.7
+  yaml: 2.9.1
+  pg: 8.23.1
+  '@types/pg': 8.23.1
+  drizzle-orm: 0.45.4
+  drizzle-kit: 0.31.11
+  fastify: 5.12.8
+  pino: 10.4.0
+  tsx: 4.23.15
 
-# Dependency install scripts stay blocked (pnpm default). The allow-list below
-# is intentionally empty. Add an entry only with a written reason per entry and
-# update tooling/test/workspace.test.ts in the same commit.
-allowBuilds: {}
+# Dependency install scripts stay blocked (pnpm default). Every installed package that has an
+# install script needs an explicit entry with a written reason, and tooling/test/workspace.test.ts
+# must list every entry set to true.
+allowBuilds:
+  # esbuild (via drizzle-kit and tsx): its install script only verifies a binary that already
+  # arrives through the platform optional package, so blocking it is expected to be harmless.
+  esbuild: false
+
+# Newly published versions must be 7 days old before pnpm will install them.
+# For an urgent security patch younger than that, add the package to
+# minimumReleaseAgeExclude with a written reason; do not remove this setting.
+minimumReleaseAge: 10080
+# S1 pins (reviewed and exactly pinned before this setting existed) that were
+# younger than 7 days when it was added. Each is an exact version, so nothing
+# newer slips through. Remove entries once they are older than 7 days.
+minimumReleaseAgeExclude:
+  - '@eslint-community/regexpp@4.12.3'
+  - '@rolldown/pluginutils@1.1.0'
+  - '@rolldown/binding-android-arm-eabi@1.2.18'
+  - '@rolldown/binding-android-arm64@1.2.18'
+  - '@rolldown/binding-darwin-arm64@1.2.18'
+  - '@rolldown/binding-darwin-x64@1.2.18'
+  - '@rolldown/binding-freebsd-x64@1.2.18'
+  - '@rolldown/binding-linux-arm-gnueabihf@1.2.18'
+  - '@rolldown/binding-linux-arm64-gnu@1.2.18'
+  - '@rolldown/binding-linux-arm64-musl@1.2.18'
+  - '@rolldown/binding-linux-ppc64-gnu@1.2.18'
+  - '@rolldown/binding-linux-s390x-gnu@1.2.18'
+  - '@rolldown/binding-linux-x64-gnu@1.2.18'
+  - '@rolldown/binding-linux-x64-musl@1.2.18'
+  - '@rolldown/binding-openharmony-arm64@1.2.18'
+  - '@rolldown/binding-win32-arm64-msvc@1.2.18'
+  - '@rolldown/binding-win32-x64-msvc@1.2.18'
+  - '@typescript-eslint/eslint-plugin@8.72.2'
+  - '@typescript-eslint/parser@8.72.2'
+  - '@typescript-eslint/project-service@8.72.2'
+  - '@typescript-eslint/scope-manager@8.72.2'
+  - '@typescript-eslint/tsconfig-utils@8.72.2'
+  - '@typescript-eslint/type-utils@8.72.2'
+  - '@typescript-eslint/types@8.72.2'
+  - '@typescript-eslint/typescript-estree@8.72.2'
+  - '@typescript-eslint/utils@8.72.2'
+  - '@typescript-eslint/visitor-keys@8.72.2'
+  - 'rolldown@1.2.18'
+  - 'typescript-eslint@8.72.2'
+  - 'vite@8.3.7'
