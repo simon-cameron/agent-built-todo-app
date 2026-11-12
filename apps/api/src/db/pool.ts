@@ -21,6 +21,6 @@ export function createPool(config: AppConfig, logger: Logger): pg.Pool {
     query_timeout: 5000,
   });
   // Without a listener, an idle client dropped when the database stops raises an unhandled 'error' and crashes Node.
-  pool.on('error', (error) => logger.error(describeError(error), 'database pool error'));
+  pool.on('error', (error) => logger.error({ err: describeError(error) }, 'database pool error'));
   return pool;
 }

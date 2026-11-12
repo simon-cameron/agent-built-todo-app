@@ -1,3 +1,5 @@
+import pino, { type DestinationStream } from 'pino';
+
 /** The few logging calls the API makes; a pino logger satisfies it. Fields are always safe values, never error objects. */
 export interface Logger {
   info(fields: object, message: string): void;
@@ -19,4 +21,19 @@ export function errorCode(error: unknown): string {
 /** The only error fields that may be logged: pg `detail`, `where`, SQL text and parameters stay out. */
 export function describeError(error: unknown): { code: string; message: string } {
   return { code: errorCode(error), message: error instanceof Error ? error.message : 'A non-error value was thrown.' };
+}
+
+/** One JSON logger: level as a label, ISO UTC time, no pid or hostname. The default destination is synchronous so lines survive process.exit. */
+export function createLogger(destination: DestinationStream = pino.destination({ fd: 1, sync: true })): pino.Logger {
+  return pino(
+    {
+      level: 'info',
+      base: null,
+      timestamp: pino.stdTimeFunctions.isoTime,
+      formatters: { level: (label) => ({ level: label }) },
+      // Second layer only: no log call is meant to carry these fields at all.
+      redact: { paths: ['password', 'dbPassword', '*.password', '*.dbPassword'], censor: '[redacted]' },
+    },
+    destination,
+  );
 }

@@ -18,6 +18,9 @@ catalog:
   '@types/pg': 8.23.1
   drizzle-orm: 0.45.4
   drizzle-kit: 0.31.11
+  fastify: 5.12.8
+  pino: 10.4.0
+  tsx: 4.23.15
 
 # Dependency install scripts stay blocked (pnpm default). Every installed package that has an
 # install script needs an explicit entry with a written reason, and tooling/test/workspace.test.ts

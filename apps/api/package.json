@@ -5,18 +5,22 @@
   "type": "module",
   "engines": { "node": "^24" },
   "scripts": {
+    "dev": "tsx watch --env-file=../../.env src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
     "@todo/shared": "workspace:*",
-    "zod": "catalog:",
+    "drizzle-orm": "catalog:",
+    "fastify": "catalog:",
     "pg": "catalog:",
-    "drizzle-orm": "catalog:"
+    "pino": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@types/pg": "catalog:",
-    "drizzle-kit": "catalog:"
+    "drizzle-kit": "catalog:",
+    "tsx": "catalog:"
   }
 }
