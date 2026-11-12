@@ -1,0 +1,14 @@
+{
+  "name": "@todo/web",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": { "node": "^24" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@todo/shared": "workspace:*"
+  }
+}

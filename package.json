@@ -1,0 +1,28 @@
+{
+  "name": "agent-built-todo-app",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "packageManager": "pnpm@11.6.0",
+  "engines": { "node": "^24" },
+  "scripts": {
+    "dev": "node tooling/not-yet.mjs dev 4",
+    "test": "vitest run",
+    "test:e2e": "node tooling/not-yet.mjs test:e2e 6",
+    "lint": "eslint .",
+    "typecheck": "pnpm -r typecheck && tsc -p tooling/tsconfig.json --noEmit",
+    "db:generate": "node tooling/not-yet.mjs db:generate 2",
+    "check:exposure": "node tooling/not-yet.mjs check:exposure 3",
+    "audit": "pnpm audit --audit-level high"
+  },
+  "devDependencies": {
+    "@eslint/js": "catalog:",
+    "@types/node": "catalog:",
+    "eslint": "catalog:",
+    "eslint-plugin-react": "catalog:",
+    "globals": "catalog:",
+    "typescript": "catalog:",
+    "typescript-eslint": "catalog:",
+    "vitest": "catalog:"
+  }
+}
