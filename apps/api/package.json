@@ -11,6 +11,8 @@
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {
+    "@fastify/cors": "catalog:",
+    "@fastify/helmet": "catalog:",
     "@todo/shared": "workspace:*",
     "drizzle-orm": "catalog:",
     "fastify": "catalog:",

@@ -3,7 +3,7 @@ import type pg from 'pg';
 import type { AppConfig } from './config';
 import { replyWithError, sendError } from './errors';
 import { logRequest, registerRequestLog } from './request-log';
-import { registerSecurity } from './security';
+import { FRAMEWORK_ERROR_HEADERS, registerSecurity } from './security';
 
 export interface AppDependencies {
   readonly config: AppConfig;
@@ -26,6 +26,7 @@ export function buildApp({ config, pool, logger }: AppDependencies): FastifyInst
     logController: new LogController({ disableRequestLogging: true }),
     // Errors Fastify raises before routing (for example a bad URL) skip the error handler; both end in the same mapper.
     frameworkErrors: (error, request, reply) => {
+      void reply.headers(FRAMEWORK_ERROR_HEADERS);
       replyWithError(error, request, reply);
       logRequest(logger, request, reply);
     },

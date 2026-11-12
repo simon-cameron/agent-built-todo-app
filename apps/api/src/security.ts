@@ -1,3 +1,5 @@
+import cors from '@fastify/cors';
+import helmet from '@fastify/helmet';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
 import { sendError } from './errors';
@@ -85,11 +87,80 @@ export const originPlugin = fp<SecurityPorts>(
   { name: 'todo-origin-check' },
 );
 
+/** The content-security policy of every response: the API serves JSON only, so nothing may load and nothing may frame it. */
+export const CONTENT_SECURITY_POLICY = "default-src 'none';frame-ancestors 'none'";
+
 /**
- * Registers the browser-safety hooks in a fixed order (Host, then Origin). Each is a skip-override plugin, so the
- * registration order is the execution order and the hooks also apply to the not-found handler.
+ * The security headers for the one answer no hook can reach: Fastify raises a malformed URL such as /health/% before
+ * routing, so the helmet and no-store hooks never run for it. Kept equal to what a normal response carries by a test
+ * that compares both ways, so a helmet upgrade that adds or changes a header fails the build instead of drifting.
+ */
+export const FRAMEWORK_ERROR_HEADERS: Readonly<Record<string, string>> = {
+  'cache-control': 'no-store',
+  'content-security-policy': CONTENT_SECURITY_POLICY,
+  'cross-origin-opener-policy': 'same-origin',
+  'cross-origin-resource-policy': 'same-origin',
+  'origin-agent-cluster': '?1',
+  'referrer-policy': 'no-referrer',
+  'strict-transport-security': 'max-age=31536000; includeSubDomains',
+  'x-content-type-options': 'nosniff',
+  'x-dns-prefetch-control': 'off',
+  'x-download-options': 'noopen',
+  'x-frame-options': 'SAMEORIGIN',
+  'x-permitted-cross-domain-policies': 'none',
+  'x-xss-protection': '0',
+};
+
+/** Methods a browser may use cross-origin. */
+export const CORS_METHODS = ['GET', 'POST', 'PATCH', 'PUT', 'DELETE'] as const;
+/** Seconds a browser may cache a preflight answer. */
+export const CORS_MAX_AGE_SECONDS = 600;
+
+/** Adds `Cache-Control: no-store` to every response, including the ones a later hook rejects. */
+export const noStorePlugin = fp(
+  async (app) => {
+    app.addHook('onRequest', async (_request: FastifyRequest, reply: FastifyReply) => {
+      void reply.header('cache-control', 'no-store');
+    });
+  },
+  { name: 'todo-no-store' },
+);
+
+/**
+ * Answers 404 route_not_found to an OPTIONS request that is not a real preflight (no Origin or no
+ * Access-Control-Request-Method), so the CORS plugin's plain-text 400 never appears.
+ */
+export const optionsPlugin = fp(
+  async (app) => {
+    app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
+      if (request.method !== 'OPTIONS') return undefined;
+      if (request.headers.origin !== undefined && request.headers['access-control-request-method'] !== undefined) return undefined;
+      return sendError(reply, 'route_not_found');
+    });
+  },
+  { name: 'todo-options-guard' },
+);
+
+/**
+ * Registers the browser-safety layer in a fixed order: security headers, `no-store`, Host, Origin, the plain
+ * OPTIONS guard, then CORS. Each is a skip-override plugin, so the registration order is the execution order,
+ * the hooks also apply to the not-found handler, and a 403 carries the headers while CORS never runs for it.
  */
 export function registerSecurity(app: FastifyInstance, ports: SecurityPorts): void {
+  void app.register(helmet, {
+    // Only the two directives below: no merged default such as 'unsafe-inline'.
+    contentSecurityPolicy: { useDefaults: false, directives: { 'default-src': ["'none'"], 'frame-ancestors': ["'none'"] } },
+  });
+  void app.register(noStorePlugin);
   void app.register(hostPlugin, ports);
   void app.register(originPlugin, ports);
+  void app.register(optionsPlugin);
+  void app.register(cors, {
+    // The exact two origins, never * and never reflected from the request.
+    origin: [...allowedOrigins(ports.webPort)],
+    methods: [...CORS_METHODS],
+    allowedHeaders: ['Content-Type'],
+    maxAge: CORS_MAX_AGE_SECONDS,
+    credentials: false,
+  });
 }
