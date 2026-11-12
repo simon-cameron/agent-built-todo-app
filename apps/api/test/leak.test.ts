@@ -28,14 +28,38 @@ async function runWithPassword(password: string, overrides: Parameters<typeof ru
 }
 
 describe('the password never reaches output', () => {
-  it('on a failed probe with a marker password', async () => {
+  it('on a failed migration with a marker password', async () => {
     const marker = generated();
     const { output, exits } = await runWithPassword(marker, {
-      probe: async () => {
+      probe: async () => undefined,
+      migrate: async () => {
         throw Object.assign(new Error(`bad ${marker}`), { code: 'XX000', detail: marker });
       },
     });
     expect(exits).toEqual([1]);
+    expect(output).not.toContain(marker);
+  });
+
+  it('when the database is unreachable, with a marker in the driver error', async () => {
+    const marker = generated();
+    const { output, exits } = await runWithPassword(marker, {
+      probe: async () => Promise.reject(Object.assign(new Error(`down ${marker}`), { code: 'ECONNREFUSED', detail: marker })),
+      waitMs: 2,
+      intervalMs: 1,
+      sleep: async () => undefined,
+    });
+    expect(exits).toEqual([1]);
+    expect(output).toContain('database unreachable at');
+    expect(output).not.toContain(marker);
+  });
+
+  it('when the database rejects the login (synthetic 28P01)', async () => {
+    const marker = generated();
+    const { output, exits } = await runWithPassword(marker, {
+      probe: async () => Promise.reject(Object.assign(new Error(`password ${marker}`), { code: '28P01', detail: marker })),
+    });
+    expect(exits).toEqual([1]);
+    expect(output).toContain('docker compose down -v');
     expect(output).not.toContain(marker);
   });
 

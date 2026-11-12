@@ -65,7 +65,7 @@ describe('start', () => {
     expect(pool.ended).toBe(true);
   });
 
-  it('releases the pool and opens no socket when the database check fails', async () => {
+  it('releases the pool and opens no socket when the migration fails', async () => {
     const pool = createPool(buildTestConfig(), silentLogger);
     const port = await freePort();
     const config = Object.assign({}, buildTestConfig(), { apiPort: port });
@@ -74,7 +74,8 @@ describe('start', () => {
         config,
         logger: captureLogger().logger,
         pool,
-        probe: async () => {
+        probe: async () => undefined,
+        migrate: async () => {
           throw new Error('down');
         },
       }),

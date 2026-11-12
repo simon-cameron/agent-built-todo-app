@@ -4,15 +4,11 @@ import { buildApp as defaultBuildApp } from './app';
 import type { AppConfig } from './config';
 import { runMigrations } from './db/migrate';
 import { createPool } from './db/pool';
+import { waitForDatabase } from './db/wait';
 import { describeError } from './logger';
 
 /** Code constant, never read from the environment or the config: the API is reachable from this machine only. */
 export const LISTEN_HOST = '127.0.0.1';
-
-/** A failure with a message that is safe to print as is; the process exits with code 1. */
-export class StartupError extends Error {
-  readonly exitCode = 1;
-}
 
 export interface StartOptions {
   readonly config: AppConfig;
@@ -22,6 +18,12 @@ export interface StartOptions {
   readonly probe?: (pool: pg.Pool) => Promise<void>;
   readonly buildApp?: typeof defaultBuildApp;
   readonly migrate?: (pool: pg.Pool) => Promise<void>;
+  /** Total wait for the database, default 30 000 ms; a parameter, not an environment variable. */
+  readonly waitMs?: number;
+  /** Time between attempts, default 1000 ms. */
+  readonly intervalMs?: number;
+  /** Replaces the real delay so tests do not wait. */
+  readonly sleep?: (ms: number) => Promise<void>;
 }
 
 export interface RunningApp {
@@ -56,7 +58,15 @@ export async function start(options: StartOptions): Promise<RunningApp> {
   };
 
   try {
-    await (options.probe ?? probeDatabase)(pool);
+    const probe = options.probe ?? probeDatabase;
+    await waitForDatabase({
+      probe: () => probe(pool),
+      target: { host: config.dbHost, port: config.dbPort, user: config.dbUser, database: config.dbName },
+      logger,
+      ...(options.waitMs === undefined ? {} : { waitMs: options.waitMs }),
+      ...(options.intervalMs === undefined ? {} : { intervalMs: options.intervalMs }),
+      ...(options.sleep === undefined ? {} : { sleep: options.sleep }),
+    });
     const migrationStart = performance.now();
     await (options.migrate ?? runMigrations)(pool);
     logger.info({ durationMs: Math.round(performance.now() - migrationStart) }, 'migrations applied');

@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import type { FastifyInstance } from 'fastify';
 import { describe, expect, it, vi } from 'vitest';
 import { FATAL_MESSAGE, fatalLine, installFatalHandlers, runMain } from '../src/fatal';
-import { StartupError } from '../src/start';
+import { StartupError } from '../src/errors';
 import { buildTestConfig } from './db-setup';
 import { freePort } from './free-port';
 import { captureLogger } from './log-capture';
@@ -54,7 +54,8 @@ describe('runMain when startup fails', () => {
       signals: h.signals,
       logger: h.capture.logger,
       startOverrides: {
-        probe: async () => {
+        probe: async () => undefined,
+        migrate: async () => {
           throw new StartupError('safe message');
         },
       },
@@ -63,7 +64,7 @@ describe('runMain when startup fails', () => {
     expect(h.exits).toEqual([1]);
   });
 
-  it('prints one fixed sentence and a code for an unexpected error from the probe, migrate or listen', async () => {
+  it('prints one fixed sentence and a code for an unexpected error from migrate or listen', async () => {
     const marker = generated();
     const leaky = () => Object.assign(new Error(`failed ${marker}`), { code: 'XX000', detail: marker, where: marker, query: marker, parameters: [marker] });
     const listenFails = {
@@ -73,7 +74,6 @@ describe('runMain when startup fails', () => {
       close: async () => undefined,
     } as unknown as FastifyInstance;
     const sites = {
-      probe: { probe: async () => Promise.reject(leaky()) },
       migrate: { probe: async () => undefined, migrate: async () => Promise.reject(leaky()) },
       listen: { probe: async () => undefined, migrate: async () => undefined, buildApp: () => listenFails },
     };
@@ -84,6 +84,27 @@ describe('runMain when startup fails', () => {
       expect(h.exits, site).toEqual([1]);
       expect(h.errors.join('') + h.capture.lines.join(''), site).not.toContain(marker);
     }
+  });
+
+  it('turns an unknown probe error into the unreachable message with no driver text', async () => {
+    const marker = generated();
+    const h = harness();
+    await runMain({
+      env: validEnv(),
+      writeError: h.writeError,
+      exit: h.exit,
+      signals: h.signals,
+      logger: h.capture.logger,
+      startOverrides: {
+        probe: async () => Promise.reject(Object.assign(new Error(`failed ${marker}`), { code: 'XX000', detail: marker, where: marker, query: marker })),
+        waitMs: 2,
+        intervalMs: 1,
+        sleep: async () => undefined,
+      },
+    });
+    expect(h.errors.join('')).toMatch(/database unreachable at/);
+    expect(h.exits).toEqual([1]);
+    expect(h.errors.join('') + h.capture.lines.join('')).not.toContain(marker);
   });
 });
 

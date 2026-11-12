@@ -1,6 +1,7 @@
 import { formatProblems, loadConfig } from './config';
 import { createLogger, errorCode } from './logger';
-import { handleSignals, start, StartupError, type SignalSource, type StartOptions } from './start';
+import { StartupError } from './errors';
+import { handleSignals, start, type SignalSource, type StartOptions } from './start';
 
 export const FATAL_MESSAGE = 'The API stopped because of an unexpected error.';
 
