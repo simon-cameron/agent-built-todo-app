@@ -5,9 +5,13 @@ import { describe, expect, it } from 'vitest';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-/** Runs `git check-ignore` and returns its exit status (0 ignored, 1 not ignored). */
+/**
+ * Runs `git check-ignore --no-index` and returns its exit status (0 ignored, 1 not ignored).
+ * `--no-index` is essential: without it git never reports a tracked file as ignored, so
+ * "is not ignored" assertions on tracked files would pass even with the rule removed.
+ */
 function checkIgnore(path: string): number | null {
-  return spawnSync('git', ['check-ignore', '-q', path], { cwd: root }).status;
+  return spawnSync('git', ['check-ignore', '-q', '--no-index', path], { cwd: root }).status;
 }
 
 function isTracked(path: string): boolean {

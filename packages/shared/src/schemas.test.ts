@@ -40,6 +40,41 @@ describe.each(titleEndpoints)('title body (%s)', (_name, parse) => {
     expect(parse({ title: '   ' })).toEqual({ ok: false, details: [detail('title', 'empty')] });
   });
 
+  it.each([
+    ['tab', '\t\t'],
+    ['no-break space', '\u00a0\u00a0'],
+    ['em space', '\u2003\u2003'],
+  ])('rejects a %s-only title as empty', (_label, title) => {
+    expect(parse({ title })).toEqual({ ok: false, details: [detail('title', 'empty')] });
+  });
+
+  it('counts emoji as code points: 201 is too_long, 200 is accepted', () => {
+    expect(parse({ title: '\u{1F600}'.repeat(201) })).toEqual({
+      ok: false,
+      details: [detail('title', 'too_long')],
+    });
+    expect(parse({ title: '\u{1F600}'.repeat(200) }).ok).toBe(true);
+  });
+
+  it.each([
+    ['lone low surrogate', '\udc00'],
+    ['padded U+0000', '  \u0000  '],
+    ['lone low surrogate inside text', 'a\udc00b'],
+  ])('rejects a %s as invalid_character', (_label, title) => {
+    expect(parse({ title })).toEqual({ ok: false, details: [detail('title', 'invalid_character')] });
+  });
+
+  it('lists an invalid title first, then the unknown key', () => {
+    expect(parse({ done: 1, title: 'a\u0000b' })).toEqual({
+      ok: false,
+      details: [detail('title', 'invalid_character'), detail('done', 'unknown_field')],
+    });
+    expect(parse({ done: 1, title: null })).toEqual({
+      ok: false,
+      details: [detail('title', 'invalid_type'), detail('done', 'unknown_field')],
+    });
+  });
+
   it('rejects a title over 200 code points as too_long and accepts exactly 200', () => {
     expect(parse({ title: 'a'.repeat(201) })).toEqual({ ok: false, details: [detail('title', 'too_long')] });
     expect(parse({ title: 'a'.repeat(200) }).ok).toBe(true);
@@ -129,6 +164,12 @@ describe('set-done body', () => {
       ok: false,
       details: [detail('done', 'invalid_type'), detail('A', 'unknown_field'), detail('b', 'unknown_field')],
     });
+  });
+
+  it('reports a JSON-parsed __proto__ key as unknown without crashing', () => {
+    const body: unknown = JSON.parse('{"done":true,"__proto__":{"polluted":true}}');
+    expect(parseSetDone(body)).toEqual({ ok: false, details: [detail('__proto__', 'unknown_field')] });
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
   });
 
   it('lists a missing done first, then unknown keys', () => {
