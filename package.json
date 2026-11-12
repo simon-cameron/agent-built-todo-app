@@ -12,7 +12,7 @@
     "lint": "eslint .",
     "typecheck": "pnpm -r typecheck && tsc -p tooling/tsconfig.json --noEmit",
     "db:generate": "pnpm --filter @todo/api db:generate",
-    "check:exposure": "node tooling/not-yet.mjs check:exposure 3",
+    "check:exposure": "tsx tooling/check-exposure.ts",
     "audit": "pnpm audit --audit-level high"
   },
   "devDependencies": {
@@ -21,6 +21,7 @@
     "eslint": "catalog:",
     "eslint-plugin-react": "catalog:",
     "globals": "catalog:",
+    "tsx": "catalog:",
     "typescript": "catalog:",
     "typescript-eslint": "catalog:",
     "vitest": "catalog:",

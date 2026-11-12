@@ -5,7 +5,8 @@ import type { AppConfig } from './config';
 import { runMigrations } from './db/migrate';
 import { createPool } from './db/pool';
 import { waitForDatabase } from './db/wait';
-import { describeError } from './logger';
+import { StartupError } from './errors';
+import { describeError, errorCode } from './logger';
 
 /** Code constant, never read from the environment or the config: the API is reachable from this machine only. */
 export const LISTEN_HOST = '127.0.0.1';
@@ -71,7 +72,15 @@ export async function start(options: StartOptions): Promise<RunningApp> {
     await (options.migrate ?? runMigrations)(pool);
     logger.info({ durationMs: Math.round(performance.now() - migrationStart) }, 'migrations applied');
 
-    await app.listen({ host: LISTEN_HOST, port: config.apiPort });
+    try {
+      await app.listen({ host: LISTEN_HOST, port: config.apiPort });
+    } catch (error) {
+      // Safe text only: the port number is ours and API_PORT is the variable that fixes it.
+      if (errorCode(error) === 'EADDRINUSE') {
+        throw new StartupError(`The API cannot start: port ${config.apiPort} is already in use. Stop the other program or change API_PORT in .env (see the README).`);
+      }
+      throw error;
+    }
     const bound = app.server.address();
     if (bound === null || typeof bound === 'string') throw new Error('The server did not report a TCP address.');
     const address = { address: bound.address, port: bound.port };

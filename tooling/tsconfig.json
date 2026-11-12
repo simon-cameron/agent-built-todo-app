@@ -1,5 +1,5 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": { "types": ["node"] },
-  "include": ["test", "vitest.config.ts"]
+  "include": ["test", "check-exposure.ts", "vitest.config.ts"]
 }

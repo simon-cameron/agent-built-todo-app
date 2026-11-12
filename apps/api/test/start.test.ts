@@ -1,7 +1,9 @@
 import { EventEmitter } from 'node:events';
+import { createServer, type Server } from 'node:net';
 import type pg from 'pg';
 import { afterEach, describe, expect, it } from 'vitest';
 import { createPool } from '../src/db/pool';
+import { StartupError } from '../src/errors';
 import { handleSignals, LISTEN_HOST, start, type RunningApp } from '../src/start';
 import { buildTestConfig, silentLogger } from './db-setup';
 import { freePort } from './free-port';
@@ -81,6 +83,38 @@ describe('start', () => {
       }),
     ).rejects.toThrow('down');
     expect(pool.ended).toBe(true);
+    await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow();
+  });
+});
+
+function occupy(port: number): Promise<Server> {
+  return new Promise((resolveServer, reject) => {
+    const server = createServer();
+    server.once('error', reject);
+    server.listen(port, '127.0.0.1', () => resolveServer(server));
+  });
+}
+
+describe('start when the port is taken', () => {
+  it('rejects with a StartupError naming the port and API_PORT, ends the pool and listens nowhere', async () => {
+    const port = await freePort();
+    const blocker = await occupy(port);
+    try {
+      const pool = createPool(buildTestConfig(), silentLogger);
+      const config = Object.assign({}, buildTestConfig(), { apiPort: port });
+      const failure = await start({ config, logger: captureLogger().logger, pool }).then(
+        () => undefined,
+        (error: unknown) => error,
+      );
+      expect(failure).toBeInstanceOf(StartupError);
+      const message = (failure as StartupError).message;
+      expect(message).toContain(`port ${port} is already in use`);
+      expect(message).toContain('API_PORT');
+      expect(pool.ended).toBe(true);
+      expect(blocker.listening).toBe(true);
+    } finally {
+      blocker.close();
+    }
     await expect(fetch(`http://127.0.0.1:${port}/health`)).rejects.toThrow();
   });
 });

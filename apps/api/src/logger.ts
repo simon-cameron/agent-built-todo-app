@@ -31,6 +31,9 @@ export function createLogger(destination: DestinationStream = pino.destination({
       base: null,
       timestamp: pino.stdTimeFunctions.isoTime,
       formatters: { level: (label) => ({ level: label }) },
+      // The default err serializer adds type and stack fields and, for a real Error, every enumerable property (pg puts SQL there).
+      // Call sites pass already-safe plain objects; an Error that slips through is reduced to its code.
+      serializers: { err: (value: unknown) => (value instanceof Error ? { code: errorCode(value) } : value) },
       // Second layer only: no log call is meant to carry these fields at all.
       redact: { paths: ['password', 'dbPassword', '*.password', '*.dbPassword'], censor: '[redacted]' },
     },
