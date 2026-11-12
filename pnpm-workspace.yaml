@@ -14,11 +14,18 @@ catalog:
   '@types/node': 24.19.2
   zod: 4.6.7
   yaml: 2.9.1
+  pg: 8.23.1
+  '@types/pg': 8.23.1
+  drizzle-orm: 0.45.4
+  drizzle-kit: 0.31.11
 
-# Dependency install scripts stay blocked (pnpm default). The allow-list below
-# is intentionally empty. Add an entry only with a written reason per entry and
-# update tooling/test/workspace.test.ts in the same commit.
-allowBuilds: {}
+# Dependency install scripts stay blocked (pnpm default). Every installed package that has an
+# install script needs an explicit entry with a written reason, and tooling/test/workspace.test.ts
+# must list every entry set to true.
+allowBuilds:
+  # esbuild (via drizzle-kit and tsx): its install script only verifies a binary that already
+  # arrives through the platform optional package, so blocking it is expected to be harmless.
+  esbuild: false
 
 # Newly published versions must be 7 days old before pnpm will install them.
 # For an urgent security patch younger than that, add the package to

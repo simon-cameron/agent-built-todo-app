@@ -1,7 +1,8 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { parse } from 'yaml';
 import { describe, expect, it } from 'vitest';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -22,6 +23,32 @@ const packagePaths = [
   'apps/web/package.json',
   'packages/shared/package.json',
 ];
+
+/** The pnpm lockfile does not record install scripts, so the installed packages are inspected instead. */
+function packagesWithInstallScripts(): Set<string> {
+  const store = resolve(root, 'node_modules', '.pnpm');
+  const found = new Set<string>();
+  for (const folder of readdirSync(store)) {
+    const modules = resolve(store, folder, 'node_modules');
+    if (!existsSync(modules)) continue;
+    for (const entry of readdirSync(modules)) {
+      const candidates = entry.startsWith('@') ? readdirSync(resolve(modules, entry)).map((name) => resolve(modules, entry, name)) : [resolve(modules, entry)];
+      for (const dir of candidates) {
+        const manifest = resolve(dir, 'package.json');
+        if (!existsSync(manifest)) continue;
+        const { name, scripts } = JSON.parse(readFileSync(manifest, 'utf8')) as { name?: string; scripts?: Record<string, string> };
+        const hasScript = Boolean(scripts?.['preinstall'] ?? scripts?.['install'] ?? scripts?.['postinstall']);
+        if (name !== undefined && (hasScript || existsSync(resolve(dir, 'binding.gyp')))) found.add(name);
+      }
+    }
+  }
+  return found;
+}
+
+function readAllowBuilds(): Record<string, boolean> {
+  const { allowBuilds } = parse(read('pnpm-workspace.yaml')) as { allowBuilds?: Record<string, boolean> };
+  return allowBuilds ?? {};
+}
 
 const EXACT = /^\d+\.\d+\.\d+$/;
 const ALLOWED_NON_EXACT = /^(catalog:|workspace:\*)$/;
@@ -74,13 +101,29 @@ describe('workspace pins', () => {
     expect(tracked.trim()).toBe('pnpm-lock.yaml');
   });
 
-  it('keeps the install-script allow-list equal to the expected (empty) list', () => {
-    const yaml = read('pnpm-workspace.yaml');
+  it('has an explicit allowBuilds decision for every installed package with an install script, and no stale entry', () => {
+    const decisions = readAllowBuilds();
+    const withScripts = packagesWithInstallScripts();
+    expect([...withScripts].sort()).toEqual(Object.keys(decisions).sort());
+  });
+
+  it('allows install scripts only for the packages listed here', () => {
+    const allowed = Object.entries(readAllowBuilds())
+      .filter(([, decision]) => decision)
+      .map(([name]) => name);
     const expected: string[] = [];
-    const block = /^allowBuilds:(.*)$/m.exec(yaml);
-    expect(block).not.toBeNull();
-    if (expected.length === 0) {
-      expect(block?.[1]?.trim()).toBe('{}');
+    expect(allowed.sort()).toEqual(expected);
+  });
+
+  it('has no pg-native, and only registry packages with integrity hashes, in the lockfile', () => {
+    const lock = parse(read('pnpm-lock.yaml')) as { packages?: Record<string, { resolution?: Record<string, unknown> }> };
+    const packages = Object.entries(lock.packages ?? {});
+    expect(packages.length).toBeGreaterThan(0);
+    for (const [key, entry] of packages) {
+      expect(key.startsWith('pg-native@'), key).toBe(false);
+      expect(typeof entry.resolution?.['integrity'], key).toBe('string');
+      expect(entry.resolution?.['tarball'], key).toBeUndefined();
+      expect(entry.resolution?.['type'], key).toBeUndefined();
     }
   });
 
