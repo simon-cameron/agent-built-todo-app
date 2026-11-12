@@ -83,4 +83,13 @@ describe('workspace pins', () => {
       expect(block?.[1]?.trim()).toBe('{}');
     }
   });
+
+  it('keeps the 7 day release cooling-off and only exact-version exclusions', () => {
+    const yaml = read('pnpm-workspace.yaml');
+    expect(yaml).toMatch(/^minimumReleaseAge: 10080$/m);
+    const excluded = /^minimumReleaseAgeExclude:\n((?:[ ]{2}- .+\n?)+)/m.exec(yaml);
+    for (const line of (excluded?.[1] ?? '').split('\n').filter((l) => l.trim() !== '')) {
+      expect(line, line).toMatch(/^ {2}- '(@[a-z0-9-]+\/)?[a-z0-9.-]+@\d+\.\d+\.\d+'$/);
+    }
+  });
 });
